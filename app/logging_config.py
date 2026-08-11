@@ -23,6 +23,19 @@ class JsonlFileProcessor:
 
 
 
+def _scrub_value(value: Any) -> Any:
+    """Recursively scrub string values before a log event is rendered."""
+    if isinstance(value, str):
+        return scrub_text(value)
+    if isinstance(value, dict):
+        return {key: _scrub_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_scrub_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_value(item) for item in value)
+    return value
+
+
 def scrub_event(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     for key, val in event_dict.items():
         if isinstance(val, str):
