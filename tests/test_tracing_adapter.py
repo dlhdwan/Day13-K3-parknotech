@@ -23,6 +23,23 @@ class TracingAdapterTests(unittest.TestCase):
         with patch.dict(os.environ, {"LANGFUSE_PUBLIC_KEY": "pk-only"}, clear=True):
             self.assertFalse(tracing.tracing_enabled())
 
+    def test_score_and_flush_safe_when_disabled(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            # Must not raise exceptions
+            tracing.score_trace("heuristic_quality", 0.85)
+            tracing.flush_tracing()
+
+    def test_dummy_client_supports_extended_sdk_methods(self) -> None:
+        dummy = tracing._DummyClient()
+        self.assertIsNone(dummy.update_current_trace())
+        self.assertIsNone(dummy.update_current_generation())
+        self.assertIsNone(dummy.update_current_span())
+        self.assertIsNone(dummy.score(name="test", value=1.0))
+        self.assertIsNone(dummy.create_score(name="test", value=1.0))
+        self.assertIsNone(dummy.flush())
+        self.assertIsNone(dummy.get_prompt("test"))
+
+
 
 if __name__ == "__main__":
     unittest.main()

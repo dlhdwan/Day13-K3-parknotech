@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 
@@ -8,7 +9,7 @@ from .mock_llm import FakeLLM
 from .mock_rag import retrieve
 from .pii import hash_user_id, summarize_text
 from .prompt_management import resolve_prompt
-from .tracing import get_langfuse_client, observe, tracing_enabled
+from .tracing import get_langfuse_client, observe, score_trace, tracing_enabled
 
 from structlog.contextvars import get_contextvars
 
@@ -45,7 +46,6 @@ class LabAgent:
         latency_ms = int((time.perf_counter() - started) * 1000)
         cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
 
-
         trace_metadata = {
             "prompt_name": prompt.name,
             "prompt_label": prompt.label,
@@ -56,14 +56,25 @@ class LabAgent:
         if cid:
             trace_metadata["correlation_id"] = cid
 
+        env = os.getenv("APP_ENV", "dev")
+        tags = ["lab", feature, self.model]
+        if env:
+            tags.append(env)
+
         langfuse_client.update_current_trace(
+            name="chat-pipeline",
+            input={"message": summarize_text(message)},
+            output={"answer": summarize_text(response.text)},
             user_id=hash_user_id(user_id),
             session_id=session_id,
-            tags=["lab", feature, self.model],
+            tags=tags,
             metadata=trace_metadata,
         )
         langfuse_client.update_current_generation(
+            name="llm-generation",
             model=self.model,
+            input={"prompt": prompt.text},
+            output={"text": response.text},
             metadata={
                 "doc_count": len(docs),
                 "query_preview": summarize_text(message),
@@ -74,11 +85,18 @@ class LabAgent:
                 "prompt_fetch_error": prompt.fetch_error,
             },
             usage_details={
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
+                "input": response.usage.input_tokens,
+                "output": response.usage.output_tokens,
+                "total": response.usage.input_tokens + response.usage.output_tokens,
             },
             cost_details={"total": cost_usd},
             prompt=prompt.managed_prompt,
+        )
+
+        score_trace(
+            name="heuristic_quality",
+            value=quality_score,
+            comment=f"Heuristic quality evaluation score for {feature}",
         )
 
         metrics.record_request(
@@ -114,3 +132,4 @@ class LabAgent:
         if "[REDACTED" in answer:
             score -= 0.2
         return round(max(0.0, min(1.0, score)), 2)
+
