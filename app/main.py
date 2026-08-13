@@ -9,17 +9,35 @@ from structlog.contextvars import bind_contextvars
 from .agent import LabAgent
 from .incidents import disable, enable, status
 from .logging_config import configure_logging, get_logger
-from .metrics import record_error, snapshot
+from .metrics import get_prometheus_metrics, record_error, snapshot
 from .middleware import CorrelationIdMiddleware
+from .otel_tracing import init_otel, is_otel_enabled
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
 from .tracing import flush_tracing, tracing_enabled
+from pathlib import Path
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 configure_logging()
 log = get_logger()
 app = FastAPI(title="Day 13 Observability Lab")
 app.add_middleware(CorrelationIdMiddleware)
 agent = LabAgent()
+
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/", response_class=FileResponse)
+@app.get("/lab", response_class=FileResponse)
+async def serve_lab_frontend():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"ok": True, "message": "Day 13 Observability Lab API"}
+
 
 
 @app.exception_handler(Exception)
@@ -34,11 +52,12 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 @app.on_event("startup")
 async def startup() -> None:
+    init_otel()
     log.info(
         "app_started",
         service=os.getenv("APP_NAME", "day13-observability-lab"),
         env=os.getenv("APP_ENV", "dev"),
-        payload={"tracing_enabled": tracing_enabled()},
+        payload={"tracing_enabled": tracing_enabled(), "otel_enabled": is_otel_enabled()},
     )
 
 
@@ -50,12 +69,22 @@ async def shutdown() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": True, "tracing_enabled": tracing_enabled(), "incidents": status()}
+    return {"ok": True, "tracing_enabled": tracing_enabled(), "otel_enabled": is_otel_enabled(), "incidents": status()}
 
 
 @app.get("/metrics")
-async def metrics() -> dict:
+async def metrics(request: Request) -> Any:
+    accept = request.headers.get("accept", "")
+    if "text/plain" in accept or "openmetrics" in accept:
+        content, media_type = get_prometheus_metrics()
+        return Response(content=content, media_type=media_type)
     return snapshot()
+
+
+@app.get("/prometheus")
+async def prometheus_endpoint() -> Response:
+    content, media_type = get_prometheus_metrics()
+    return Response(content=content, media_type=media_type)
 
 
 @app.post("/chat", response_model=ChatResponse)

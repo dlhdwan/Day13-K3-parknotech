@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Observability Lab Mission Control — Day 13 K3</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Top Navigation / Mission Control Header -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-orb"></div>
+      <div class="brand-text">
+        <h1>AI OBSERVABILITY LAB <span class="badge-lab">K3 PARKNOTECH</span></h1>
+        <p class="subtitle">Cloud-Native Telemetry & Chaos Engineering Console</p>
+      </div>
+    </div>
+    
+    <div class="service-links">
+      <a href="http://localhost:3001" target="_blank" class="nav-pill pill-grafana" title="Mở Grafana Dashboard">
+        <span class="dot"></span> Grafana <span class="port">:3001</span>
+      </a>
+      <a href="http://localhost:16686" target="_blank" class="nav-pill pill-jaeger" title="Mở Jaeger Tracing UI">
+        <span class="dot"></span> Jaeger <span class="port">:16686</span>
+      </a>
+      <a href="http://localhost:9090" target="_blank" class="nav-pill pill-prom" title="Mở Prometheus Targets">
+        <span class="dot"></span> Prometheus <span class="port">:9090</span>
+      </a>
+      <a href="/metrics" target="_blank" class="nav-pill pill-api" title="Xem raw JSON metrics">
+        <span class="dot"></span> /metrics
+      </a>
+      <a href="/docs" target="_blank" class="nav-pill pill-docs" title="FastAPI Swagger OpenAPI Docs">
+        Swagger
+      </a>
+    </div>
+  </header>
+
+  <main class="dashboard-grid">
+    <!-- Row 1: Live Status & Metrics Ribbon -->
+    <section class="ribbon-grid">
+      <div class="metric-card" id="card-traffic">
+        <div class="card-label">TOTAL TRAFFIC</div>
+        <div class="card-value" id="val-traffic">0 <span class="unit">reqs</span></div>
+        <div class="card-footer" id="val-error-rate">Error Rate: 0.0%</div>
+      </div>
+
+      <div class="metric-card" id="card-latency">
+        <div class="card-label">LATENCY P95 (SLO &le; 3s)</div>
+        <div class="card-value" id="val-p95">0 <span class="unit">ms</span></div>
+        <div class="card-footer" id="val-p50">P50: 0 ms | P99: 0 ms</div>
+      </div>
+
+      <div class="metric-card" id="card-cost">
+        <div class="card-label">CUMULATIVE COST</div>
+        <div class="card-value" id="val-cost">$0.0000 <span class="unit">USD</span></div>
+        <div class="card-footer" id="val-tokens">In: 0 | Out: 0 tokens</div>
+      </div>
+
+      <div class="metric-card" id="card-quality">
+        <div class="card-label">QUALITY SCORE PROXY</div>
+        <div class="card-value" id="val-quality">0.00 <span class="unit">/ 1.0</span></div>
+        <div class="card-footer" id="val-slo-status">SLO Status: HEALTHY</div>
+      </div>
+    </section>
+
+    <!-- Row 2: Control Room Matrix (Query Tester + Load Generator + Chaos Controls) -->
+    <div class="control-columns">
+      
+      <!-- Column 1: Interactive Query Sandbox -->
+      <section class="panel-box">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="icon">💬</span> Interactive Query Sandbox
+          </div>
+          <span class="panel-tag">POST /chat</span>
+        </div>
+
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Chọn Mẫu Truy Vấn Nhanh (Preset):</label>
+            <select id="query-preset" class="form-select">
+              <option value="custom">-- Tự nhập nội dung --</option>
+              <option value="normal">1. Câu hỏi bình thường (Refund Policy FAQ)</option>
+              <option value="pii_phone">2. Kiểm tra PII: Số điện thoại VN (+84 988 123 456)</option>
+              <option value="pii_card">3. Kiểm tra PII: Thẻ tín dụng & CCCD</option>
+              <option value="challenge">4. Official Challenge: Refund Inquiry (seed 1303)</option>
+              <option value="long_query">5. High Token In: Truy vấn kỹ thuật chi tiết</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-6">
+              <label>Feature Category:</label>
+              <select id="input-feature" class="form-select">
+                <option value="refund">refund (Challenge Feature)</option>
+                <option value="billing">billing</option>
+                <option value="qa" selected>qa</option>
+                <option value="technical">technical</option>
+              </select>
+            </div>
+            <div class="form-group col-6">
+              <label>User ID (Tự động băm):</label>
+              <input type="text" id="input-userid" class="form-input" value="user_lab_tester">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Nội dung câu hỏi (Message):</label>
+            <textarea id="input-message" class="form-textarea" rows="3" placeholder="Nhập câu hỏi cần kiểm thử qua AI Agent..."></textarea>
+          </div>
+
+          <button id="btn-send-single" class="btn btn-primary">
+            <span class="btn-icon">⚡</span> Gửi Truy Vấn Đơn Lẻ
+          </button>
+
+          <!-- Single Query Result Box -->
+          <div id="single-result" class="result-box hidden">
+            <div class="result-header">
+              <span class="badge" id="res-status">200 OK</span>
+              <span class="cid-chip" id="res-cid" title="Click to copy Correlation ID">cid: unknown</span>
+            </div>
+            <div class="result-body" id="res-answer">...</div>
+            <div class="result-meta">
+              <span id="res-latency">⏱️ 0 ms</span>
+              <span id="res-tokens">🔤 In: 0 / Out: 0</span>
+              <span id="res-cost">💵 $0.0000</span>
+              <span id="res-quality">⭐ Quality: 0.0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 2: Chaos Injection & Load Generator -->
+      <div class="column-stack">
+        
+        <!-- Chaos Engineering Controls -->
+        <section class="panel-box">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="icon">⚠️</span> Trình Kích Hoạt Sự Cố (Chaos Controls)
+            </div>
+            <span class="panel-tag status-active" id="chaos-indicator">Ready</span>
+          </div>
+
+          <div class="panel-body">
+            <div class="chaos-switch-list">
+              
+              <div class="chaos-item" id="item-rag_slow">
+                <div class="chaos-info">
+                  <div class="chaos-name">
+                    <span class="badge-incident challenge">CHALLENGE</span> rag_slow
+                  </div>
+                  <div class="chaos-desc">Bơm độ trễ +2.5s vào RAG retrieval (Phá vỡ SLO Latency P95 &le; 3s)</div>
+                </div>
+                <button class="btn btn-toggle" data-incident="rag_slow" id="toggle-rag_slow">OFF</button>
+              </div>
+
+              <div class="chaos-item" id="item-rag_fail">
+                <div class="chaos-info">
+                  <div class="chaos-name">
+                    <span class="badge-incident error">ERROR</span> rag_fail
+                  </div>
+                  <div class="chaos-desc">RAG ném RuntimeError (Đẩy Error Rate lên 100% kích hoạt Alert)</div>
+                </div>
+                <button class="btn btn-toggle" data-incident="rag_fail" id="toggle-rag_fail">OFF</button>
+              </div>
+
+              <div class="chaos-item" id="item-cost_spike">
+                <div class="chaos-info">
+                  <div class="chaos-name">
+                    <span class="badge-incident warning">COST</span> cost_spike
+                  </div>
+                  <div class="chaos-desc">Nhân 4 lần số lượng Output Tokens (Tăng vọt chi phí LLM)</div>
+                </div>
+                <button class="btn btn-toggle" data-incident="cost_spike" id="toggle-cost_spike">OFF</button>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- Automated Traffic / Load Generator -->
+        <section class="panel-box">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="icon">🚀</span> Trình Giả Lập Tải Tự Động (Load Generator)
+            </div>
+            <span class="panel-tag">Traffic Simulator</span>
+          </div>
+
+          <div class="panel-body">
+            <div class="form-row">
+              <div class="form-group col-6">
+                <label>Số Lượng Requests:</label>
+                <select id="load-count" class="form-select">
+                  <option value="10">10 requests (Quick Test)</option>
+                  <option value="30" selected>30 requests (Standard)</option>
+                  <option value="60">60 requests (Stress Test)</option>
+                </select>
+              </div>
+              <div class="form-group col-6">
+                <label>Độ Đồng Thời (Concurrency):</label>
+                <select id="load-concurrency" class="form-select">
+                  <option value="1">1 (Tuần tự)</option>
+                  <option value="3" selected>3 luồng song song</option>
+                  <option value="5">5 luồng song song</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="load-actions">
+              <button id="btn-start-load" class="btn btn-accent">
+                <span class="btn-icon">▶</span> Bắt Đầu Bắn Tải
+              </button>
+              <button id="btn-stop-load" class="btn btn-secondary" disabled>
+                ⏹ Dừng Lại
+              </button>
+            </div>
+
+            <!-- Load Progress Bar -->
+            <div id="load-progress-wrap" class="progress-wrap hidden">
+              <div class="progress-info">
+                <span id="load-progress-text">Đang gửi: 0 / 30 requests</span>
+                <span id="load-progress-pct">0%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div id="load-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Row 3: Live Telemetry Trace Activity Feed -->
+    <section class="panel-box">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="icon">📡</span> Live Telemetry Request Feed & Trace Inspector
+        </div>
+        <div class="panel-controls">
+          <button id="btn-clear-feed" class="btn btn-xs">Xóa Bảng</button>
+          <span class="badge-live"><span class="pulse"></span> LIVE AUTO-UPDATE</span>
+        </div>
+      </div>
+
+      <div class="panel-body table-responsive">
+        <table class="feed-table" id="feed-table">
+          <thead>
+            <tr>
+              <th>Thời Gian</th>
+              <th>Correlation ID (x-request-id)</th>
+              <th>Feature</th>
+              <th>Trạng Thái</th>
+              <th>Độ Trễ</th>
+              <th>Tokens</th>
+              <th>Chi Phí ($)</th>
+              <th>Quality</th>
+              <th>Truy Vết Traces</th>
+            </tr>
+          </thead>
+          <tbody id="feed-tbody">
+            <tr class="empty-row">
+              <td colspan="9">Chưa có request nào được gửi từ bảng điều khiển. Hãy gửi một truy vấn ở trên!</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="bottom-bar">
+    <div>Day 13 Observability Lab — Nhóm <strong>ParkNoTech</strong> (K3) | OpenTelemetry &bull; Prometheus &bull; Jaeger &bull; Grafana</div>
+    <div>Correlation ID Standard &bull; PII Scrubbed &bull; SLO P95 &le; 3.0s</div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

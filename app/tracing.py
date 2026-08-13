@@ -44,14 +44,22 @@ except ImportError:  # pragma: no cover - chỉ dùng khi chưa cài requirement
 
 
 
-def get_langfuse_client():
-    return get_client()
-
-
 def tracing_enabled() -> bool:
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return LANGFUSE_SDK_AVAILABLE and bool(
+            os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")
+        )
+    if os.getenv("LANGFUSE_ENABLED", "true").lower() in ("false", "0", "no"):
+        return False
     return LANGFUSE_SDK_AVAILABLE and bool(
         os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")
     )
+
+
+def get_langfuse_client():
+    if not tracing_enabled():
+        return _DummyClient()
+    return get_client()
 
 
 def score_trace(name: str, value: float, comment: str | None = None) -> None:
@@ -78,4 +86,3 @@ def flush_tracing() -> None:
             client.flush()
     except Exception:
         pass
-

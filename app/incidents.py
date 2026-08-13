@@ -6,20 +6,33 @@ STATE = {
     "cost_spike": False,
 }
 
+ALIASES = {
+    "rag_fail": "tool_fail",
+}
+
+
+def _resolve_name(name: str) -> str:
+    return ALIASES.get(name, name)
+
 
 def enable(name: str) -> None:
-    if name not in STATE:
+    real_name = _resolve_name(name)
+    if real_name not in STATE:
         raise KeyError(f"Unknown incident: {name}")
-    STATE[name] = True
+    STATE[real_name] = True
 
 
 
 def disable(name: str) -> None:
-    if name not in STATE:
+    real_name = _resolve_name(name)
+    if real_name not in STATE:
         raise KeyError(f"Unknown incident: {name}")
-    STATE[name] = False
+    STATE[real_name] = False
 
 
 
 def status() -> dict[str, bool]:
-    return dict(STATE)
+    res = dict(STATE)
+    # Expose alias for frontend and lab tools
+    res["rag_fail"] = STATE.get("tool_fail", False)
+    return res
